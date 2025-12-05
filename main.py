@@ -63,6 +63,7 @@ class MainMenu:
         self.root = tk.Tk()
         self.root.title("Крестики-Нолики")
         self.root.geometry("600x500")
+        self.load_settings()
         self.apply_theme()
         self.root.resizable(True, True)
         self.root.minsize(500, 400)
