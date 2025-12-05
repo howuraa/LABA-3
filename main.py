@@ -873,7 +873,7 @@ class GameWindow:
         self.root.geometry("850x650")
         self.apply_theme()
         self.root.resizable(True, True)
-        self.root.minsize(650, 550)
+        self.root.minsize(1000, 550)
 
         self.load_settings()
 
@@ -1272,36 +1272,141 @@ class GameWindow:
         return random.choice(empty_cells)
 
     def get_hard_move(self, empty_cells):
-        """Получение хода для сложного уровня"""
+        """ход высокой сложности с мини-макс алгоритмом"""
         for row, col in empty_cells:
-            self.board[row][col] = GAME_SETTINGS['player2_symbol']
-            if self.check_winner(GAME_SETTINGS['player2_symbol']):
+            self.board[row][col] = 'O'
+            if self.check_winner('O'):
+                self.board[row][col] = ''
+                return row, col
+            self.board[row][col] = ''
+        for row, col in empty_cells:
+            self.board[row][col] = 'X'
+            if self.check_winner('X'):
                 self.board[row][col] = ''
                 return row, col
             self.board[row][col] = ''
 
+        best_score = -float('inf')
+        best_move = None
+
         for row, col in empty_cells:
-            self.board[row][col] = GAME_SETTINGS['player1_symbol']
-            if self.check_winner(GAME_SETTINGS['player1_symbol']):
-                self.board[row][col] = ''
-                return row, col
+            self.board[row][col] = 'O'
+            score = self.minimax(3, False, -float('inf'), float('inf'))
             self.board[row][col] = ''
+
+            if score > best_score:
+                best_score = score
+                best_move = (row, col)
+
+        if best_move:
+            return best_move
 
         center = self.board_size // 2
         if self.board[center][center] == '':
             return center, center
 
-        corners = [
-            (0, 0),
-            (0, self.board_size - 1),
-            (self.board_size - 1, 0),
-            (self.board_size - 1, self.board_size - 1)
-        ]
+        corners = [(0, 0), (0, self.board_size - 1),
+                   (self.board_size - 1, 0), (self.board_size - 1, self.board_size - 1)]
         for row, col in corners:
             if self.board[row][col] == '':
                 return row, col
 
         return random.choice(empty_cells)
+
+    def minimax(self, depth, is_maximizing, alpha, beta):
+        """Мини-макс алгоритм с альфа-бета отсечением"""
+
+        '''
+            depth — насколько глубоко думать (сколько ходов вперед)
+            is_maximizing — True если ходит ИИ (максимизируем), False если игрок (минимизируем)
+            alpha — лучший результат для максимизирующего игрока
+            beta — лучший результат для минимизирующего игрока
+        '''
+        if self.check_winner('O'):
+            return 10 + depth  # Чем быстрее победа, тем лучше
+        if self.check_winner('X'):
+            return -10 - depth  # Чем дальше поражение, тем лучше
+        if self.check_draw():
+            return 0
+        if depth == 0:
+            return self.evaluate_board() # Достигли максимальной глубины → оцениваем текущую позицию
+
+        if is_maximizing:
+            # Ход ИИ (максимизируем)
+            max_eval = -float('inf') # начинаем с худшего
+
+            for i in range(self.board_size):
+                for j in range(self.board_size):
+                    if self.board[i][j] == '':
+                        self.board[i][j] = 'O'
+                        eval_score = self.minimax(depth - 1, False, alpha, beta) # вызывает рекурснивно минимакс для следующего игрока
+                        self.board[i][j] = ''
+
+                        max_eval = max(max_eval, eval_score) # Выбираем максимальную оценку.
+                        alpha = max(alpha, eval_score) # Выбираем максимальную оценку.
+
+                        # Альфа-бета отсечение
+                        if beta <= alpha: #  если beta <= alpha, дальше искать бессмысленно
+                            return max_eval
+
+            return max_eval
+        else:
+            # Ход игрока (минимизируем)
+            min_eval = float('inf')
+
+            for i in range(self.board_size):
+                for j in range(self.board_size):
+                    if self.board[i][j] == '':
+                        self.board[i][j] = 'X'
+                        eval_score = self.minimax(depth - 1, True, alpha, beta)
+                        self.board[i][j] = ''
+
+                        min_eval = min(min_eval, eval_score)
+                        beta = min(beta, eval_score)
+
+                        if beta <= alpha:
+                            return min_eval
+
+            return min_eval
+
+    def evaluate_board(self):
+        """Оценка текущей позиции на поле"""
+        score = 0 # 0 очков
+
+        # Проверяем все возможные линии
+        for i in range(self.board_size):
+            # Строки
+            score += self.evaluate_line([(i, j) for j in range(self.board_size)])
+            # Столбцы
+            score += self.evaluate_line([(j, i) for j in range(self.board_size)])
+
+        # Диагонали
+        score += self.evaluate_line([(i, i) for i in range(self.board_size)])
+        score += self.evaluate_line([(i, self.board_size - 1 - i) for i in range(self.board_size)])
+
+        return score
+
+    def evaluate_line(self, cells):
+        """Оценка одной линии (строки, столбца или диагонали)"""
+        o_count = 0
+        x_count = 0
+
+        for row, col in cells:
+            if self.board[row][col] == 'O':
+                o_count += 1
+            elif self.board[row][col] == 'X':
+                x_count += 1
+
+        # Оценка по количеству фигур в линии
+        if o_count > 0 and x_count == 0:
+            # У ИИ есть потенциал в этой линии
+            return 10 ** (o_count - 1)  # Экспоненциальный рост: 1=10, 2=100, 3=1000
+        elif x_count > 0 and o_count == 0:
+            # У игрока есть потенциал
+            return -(10 ** (x_count - 1))
+        else:
+            # Линия заблокирована или пустая
+            return 0
 
     def check_winner(self, player):
         """Проверка победы"""
